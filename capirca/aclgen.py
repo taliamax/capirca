@@ -460,6 +460,19 @@ def _WriteFile(output_file, file_string):
     raise
 
 
+def DiscoverAllPolicies(base_directory, output_directory, definitions):
+  logging.info('finding policies...')
+  pols = []
+  pols.extend(
+    DescendRecursively(
+      base_directory,
+      output_directory,
+      definitions
+    )
+  )
+  return pols
+
+
 def Run(base_directory, definitions_directory, policy_file, output_directory,
         context):
   definitions = None
@@ -479,23 +492,46 @@ def Run(base_directory, definitions_directory, policy_file, output_directory,
     logging.info('rendering one file')
     RenderFile(base_directory, policy_file, output_directory, definitions,
                FLAGS.exp_info, write_files)
+  elif FLAGS.max_renderers == 1:
+    # If only one process, run it sequentially
+    policies = DiscoverAllPolicies(
+      base_directory,
+      output_directory,
+      definitions
+    )
+    result = []
+    for pol in policies:
+      RenderFile(
+        base_directory,
+        pol.get('in_file'),
+        pol.get('out_dir'),
+        definitions,
+        FLAGS.exp_info,
+        write_files
+      )
   else:
     # render all files in parallel
-    logging.info('finding policies...')
-    pols = []
-    pols.extend(DescendRecursively(base_directory, output_directory,
-                                   definitions))
-
+    policies = DiscoverAllPolicies(
+      base_directory,
+      output_directory,
+      definitions
+    )
     pool = context.Pool(processes=FLAGS.max_renderers)
     results = []
-    for x in pols:
-      results.append(pool.apply_async(RenderFile,
-                                      args=(base_directory,
-                                            x.get('in_file'),
-                                            x.get('out_dir'),
-                                            definitions,
-                                            FLAGS.exp_info,
-                                            write_files)))
+    for pol in policies:
+      results.append(
+        pool.apply_async(
+          RenderFile,
+          args=(
+            base_directory,
+            pol.get('in_file'),
+            pol.get('out_dir'),
+            definitions,
+            FLAGS.exp_info,
+            write_files
+          )
+        )
+      )
     pool.close()
     pool.join()
 
